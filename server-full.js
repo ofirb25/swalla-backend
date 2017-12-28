@@ -271,8 +271,14 @@ http.listen(3003, function () {
 var matches = [];
 
 
-function joinGame(user, gameId, socket){
-
+function joinMatch(pin, playerName,Clientsocket){
+	var match = matches.find(match=>match.pin === pin);
+	match.players.push({
+		userId : Clientsocket.id,
+        nickname: playerName,
+		score: 0
+	})
+	return match
 }
 
 function createGame(playerName,gameId,Clientsocket){
@@ -301,16 +307,19 @@ io.on('connection', function (socket) {
 		// console.log('message: ' + msg);
 		io.emit('chat newMsg', msg);
 	});
-	socket.on('join game', function(user, gameId){
-		joinGame(user, gameId, socket);
+	socket.on('JOIN_MATCH', function({pin,playerName}){
+		var match = joinMatch(pin, playerName,socket);
+		socket.join(match.pin);
+		console.log('*****player joined ******', match)
+		io.to(match.pin).emit('PLAYER_JOINED',match)
 	});
 	socket.on('SET_MULTI_GAME', function({gameId, playerName}){
 		console.log('****************************game Was set')
 		console.log(socket.id);
 		var match = createGame(playerName,gameId,socket)
 		console.log(match)
-		
 		socket.emit('GAME_CREATED', match)
+		socket.join(match.pin)
 	});
 });
 
