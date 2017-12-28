@@ -15,7 +15,7 @@ const express = require('express'),
 const clientSessions = require('client-sessions');
 const upload = require('./uploads');
 const app = express();
-
+const shortid = require('shortid');
 const addRoutes = require('./routes');
 addRoutes(app);
 
@@ -268,6 +268,29 @@ http.listen(3003, function () {
 
 });
 
+var matches = [];
+
+
+function joinGame(user, gameId, socket){
+
+}
+
+function createGame(playerName,gameId,Clientsocket){
+var match= {
+    pin : shortid(),
+    hostId : Clientsocket.id,
+	gameId,
+	isActive: false,
+    players: [{
+        userId : Clientsocket.id,
+        // socket:Clientsocket,
+        nickname: playerName,
+		score: 0
+    }]
+}
+matches.push(match); 
+return match
+}
 
 io.on('connection', function (socket) {
 	console.log('a user connected');
@@ -277,6 +300,17 @@ io.on('connection', function (socket) {
 	socket.on('chat msg', function (msg) {
 		// console.log('message: ' + msg);
 		io.emit('chat newMsg', msg);
+	});
+	socket.on('join game', function(user, gameId){
+		joinGame(user, gameId, socket);
+	});
+	socket.on('SET_MULTI_GAME', function({gameId, playerName}){
+		console.log('****************************game Was set')
+		console.log(socket.id);
+		var match = createGame(playerName,gameId,socket)
+		console.log(match)
+		
+		socket.emit('GAME_CREATED', match)
 	});
 });
 
