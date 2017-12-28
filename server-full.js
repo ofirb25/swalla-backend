@@ -72,7 +72,7 @@ function getBasicQueryObj(req) {
 	var query = {};
 	
 	if (objId) {
-		try { query._id = new mongodb.ObjectID(objId);}
+ 			try { query._id = new mongodb.ObjectID(objId);}
 		catch(e) {return query}
 	}
 	if (!objTypeRequiresUser[objType]) return query;
@@ -195,7 +195,7 @@ app.post('/data/:objType', upload.single('file'), function (req, res) {
 app.put('/data/:objType/:id', function (req, res) {
 	const objType 	= req.params.objType;
 	const objId 	= req.params.id;
-	const newObj 	= req.body;
+	const newObj 	= req.body;	
 
 	cl(`Requested to UPDATE the ${objType} with id: ${objId}`);
 	var query = getBasicQueryObj(req)
@@ -207,6 +207,8 @@ app.put('/data/:objType/:id', function (req, res) {
 				if (err) {
 					cl('Cannot Update', err)
 					res.json(500, { error: 'Update failed' })
+					console.log('*******************')
+					
 				} else {
 					if (result.modifiedCount) res.json(newObj);
 					else res.json(403, { error: 'Cannot update' })
