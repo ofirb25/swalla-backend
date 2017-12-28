@@ -308,6 +308,7 @@ io.on('connection', function (socket) {
 	socket.on('JOIN_MATCH', function({pin,playerName}){
 		var match = joinMatch(pin, playerName,socket);
 		socket.join(match.pin);
+		console.log('*****player joined ******', match)
 		io.to(match.pin).emit('PLAYER_JOINED',match)
 	});
 	socket.on('SET_MULTI_GAME', function({gameId, playerName}){
