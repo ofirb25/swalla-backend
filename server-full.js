@@ -1,5 +1,6 @@
 
 
+
 // Minimal Simple REST API Handler (With MongoDB and Socket.io)
 // Plus support for simple login and session
 // Plus support for file upload
@@ -13,12 +14,15 @@ const express = require('express'),
 	bodyParser = require('body-parser'),
 	cors = require('cors'),
 	mongodb = require('mongodb')
+	
 
 const clientSessions = require('client-sessions');
 const upload = require('./uploads');
 const app = express();
 const shortid = require('shortid');
 const addRoutes = require('./routes');
+var serveStatic = require('serve-static');
+
 addRoutes(app);
 
 var corsOptions = {
@@ -28,7 +32,7 @@ var corsOptions = {
 
 const serverRoot = 'http://localhost:3003/';
 const baseUrl = serverRoot + 'data';
-
+app.use(serveStatic(__dirname + "/dist"));
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 app.use(clientSessions({
@@ -271,10 +275,10 @@ http.listen(3003, function () {
 });
 
 var matches = [];
+var activePlayersMap = {};
 
 function findMatchByPin(pin) {
 	return matches.find(match => match.pin === pin);
-
 }
 function joinMatch(pin, playerName, Clientsocket) {
 	var match = findMatchByPin(pin)
@@ -286,12 +290,29 @@ function joinMatch(pin, playerName, Clientsocket) {
 	})
 	return match
 }
+
+function removeFromMatch(socketId) {
+	if (activePlayersMap[socketId]) {
+		var playerMatch = matches.find(match => {
+			return match.pin === activePlayersMap[socketId]
+		})
+		var idx = playerMatch.players.findIndex(player => player.userId === socketId)
+		playerMatch.players.splice(idx, 1);
+		if (playerMatch.players.length === 0) removeMatch(playerMatch.pin)
+	}
+}
+
+function removeMatch(pin) {
+	var idx = matches.findIndex(match => match.pin === pin)
+	matches.splice(idx, 1)
+}
+
 function getGame(gameId) {
 	var newGameId = new mongodb.ObjectID(gameId)
 	return dbConnect()
 		.then(db => {
 			const collection = db.collection('game');
-			return collection.findOne({_id:newGameId})
+			return collection.findOne({ _id: newGameId })
 				.then(obj => {
 					db.close();
 					console.log
@@ -303,26 +324,61 @@ function getGame(gameId) {
 				})
 		});
 }
-function createGame(playerName, gameId, Clientsocket) {
-	var match = {
-		pin: shortid(),
-		hostId: Clientsocket.id,
-		gameId,
-		isActive: false,
-		players: [{
-			userId: Clientsocket.id,
-			// socket:Clientsocket,
-			nickname: playerName,
-			score: 0
-		}]
-	}
-	matches.push(match);
-	return match
-}
+function createMatch(playerName, gameId, Clientsocket) {
+	var match = {}
+	return dbConnect()
+		.then(db => {
+			const collection = db.collection('game');
+			var id = new mongodb.ObjectID(gameId)
+			return collection.findOne({ _id: id })
+				.then(obj => {
+					cl('Returning a single game: from match', obj);
 
+					match = {
+						pin: shortid(),
+						hostId: Clientsocket.id,
+						gameId,
+						currQuestion: 0,
+						questionsCount: obj.questions.length,
+						isActive: false,
+						isGameOn: true,
+						players: [{
+							userId: Clientsocket.id,
+							// socket:Clientsocket,
+							nickname: playerName,
+							score: 0
+						}]
+					}
+					db.close();
+					matches.push(match);
+					return match;
+				})
+				.catch(err => {
+					cl('Cannot get you that ', err)
+					res.json(404, { error: 'not found' })
+					db.close();
+				})
+		});
+
+}
+function saveMatch(match) {
+	dbConnect().then((db) => {
+		const collection = db.collection('match');
+
+		collection.insert(match, (err, result) => {
+			if (err) {
+				cl(`Couldnt insert a new match`, err)
+			} else {
+				cl('match' ,match + ' added');
+			}
+			db.close();
+		});
+	});
+}
 io.on('connection', (socket) => {
 	console.log('a user connected');
 	socket.on('disconnect', () => {
+		removeFromMatch(socket.id)
 		console.log('user disconnected');
 	});
 	socket.on('chat msg', (msg) => {
@@ -333,8 +389,9 @@ io.on('connection', (socket) => {
 		var match = joinMatch(pin, playerName, socket);
 		if (match) {
 			socket.join(match.pin);
-			console.log('*****player joined ******', match)
 			io.to(match.pin).emit('PLAYER_JOINED', match)
+			activePlayersMap[socket.id] = pin;
+			console.log(activePlayersMap, 'Joined to room map')
 		}
 		else {
 			//todo : add message in case game has started
@@ -342,29 +399,30 @@ io.on('connection', (socket) => {
 	});
 	socket.on('START_GAME', ({ pin }) => {
 		console.log('*****game started****** pin:', pin)
-		//set match as active
 		var match = findMatchByPin(pin)
 		match.isActive = true;
-		//emit to all mathch players that game has started
 		io.to(match.pin).emit('START_GAME', match)
 	});
 	socket.on('SET_MULTI_GAME', ({ gameId, playerName }) => {
-		console.log('****************************game Was set')
-		console.log(socket.id);
-		var match = createGame(playerName, gameId, socket)
-		console.log(match)
-		socket.emit('GAME_CREATED', match)
-		socket.join(match.pin)
+		var match = createMatch(playerName, gameId, socket).then(match => {
+			activePlayersMap[socket.id] = match.pin;
+			socket.emit('GAME_CREATED', match)
+			socket.join(match.pin)
+		})
 	});
-	socket.on('SHOW_PREV' , ({ pin }) => {
+	socket.on('SHOW_PREV', ({ pin }) => {
 		var match = findMatchByPin(pin)
-		if (!match.isPrevOn) {
+		if (!match.isPrevOn && match.currQuestion <= match.questionsCount) {
+			match.currQuestion++;
 			match.isPrevOn = true;
 			io.to(match.pin).emit('SHOW_PREV')
 			setTimeout(() => {
 				io.to(match.pin).emit('PREV_DONE')
 			}, 2500)
+		} else {
+			io.to(match.pin).emit('GAME_OVER')
 		}
+
 	})
 
 	socket.on('QUESTION_STARTED', ({ time, pin }) => {
@@ -376,14 +434,14 @@ io.on('connection', (socket) => {
 			match.answersCount = 0
 			setTimeout(() => {
 				match.isQuestionOn = false
-				setTimeout(()=>{
+				setTimeout(() => {
 					io.to(match.pin).emit('TIME_UP')
-				},3000)
+				}, 3000)
 			}, time)
 		}
 	})
+
 	socket.on('PLAYER_ANSWERED', ({ points, pin }) => {
-		console.log('PLayer answered!!!!!!', points, pin)
 		var match = findMatchByPin(pin)
 		var player = match.players.find(player => player.userId === socket.id)
 		player.score += points
@@ -391,16 +449,25 @@ io.on('connection', (socket) => {
 		io.to(match.pin).emit('PLAYER_ANSWERED', { players: match.players, answersCount: match.answersCount })
 	});
 
-	socket.on('SHOW_SCORES',({pin})=>{
+	socket.on('SHOW_SCORES', ({ pin }) => {
 		var match = findMatchByPin(pin);
-		if(!match.isScoreOn) {
+		if (!match.isScoreOn) {
 			match.isScoreOn = true;
-			setTimeout(()=>{
+			setTimeout(() => {
 				match.isScoreOn = false;
 				io.to(match.pin).emit('NEXT_QUESTION')
-			},3000)
+			}, 3000)
 		}
 	});
+	socket.on('GAME_OVER', ({ pin }) => {
+		var match = findMatchByPin(pin);
+		if(match.isGameOn) {
+			match.isGameOn = false;
+			saveMatch(match)
+			removeMatch(match.pin)
+		}
+	})
+
 });
 
 cl('WebSocket is Ready');
