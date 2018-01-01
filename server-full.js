@@ -41,7 +41,7 @@ app.use(clientSessions({
 	duration: 30 * 60 * 1000,
 	activeDuration: 5 * 60 * 1000,
 }));
-app.use(history)
+// app.use(history)
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
 
@@ -262,7 +262,7 @@ app.get('/protected', requireLogin, function (req, res) {
 // Kickup our server 
 // Note: app.listen will not work with cors and the socket
 // app.listen(3003, function () {
-http.listen(3003,history, function () {
+http.listen(3003, function () {
 	console.log(`misterREST server is ready at ${baseUrl}`);
 	console.log(`GET (list): \t\t ${baseUrl}/{entity}`);
 	console.log(`GET (single): \t\t ${baseUrl}/{entity}/{id}`);
