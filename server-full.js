@@ -213,6 +213,8 @@ app.put('/data/:objType/:id', function (req, res) {
 				if (err) {
 					cl('Cannot Update', err)
 					res.json(500, { error: 'Update failed' })
+					console.log('*******************')
+					
 				} else {
 					if (result.modifiedCount) res.json(newObj);
 					else res.json(403, { error: 'Cannot update' })
