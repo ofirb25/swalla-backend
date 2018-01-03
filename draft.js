@@ -79,7 +79,7 @@ function getBasicQueryObj(req) {
 
 	if (objId) {
 		try { query._id = new mongodb.ObjectID(objId); }
-		catch (e) { return null }
+		catch (e) { return query }
 	}
 	if (!objTypeRequiresUser[objType]) return query;
 	query.userId = null;
@@ -113,19 +113,13 @@ app.get('/data/:objType/:id', function (req, res) {
 	const objId = req.params.id;
 	cl(`Getting you an ${objType} with id: ${objId}`);
 	var query = getBasicQueryObj(req)
-	if(!query) {
-		res.json(404, { "error": 'not found' })
-		return
-	}
-	console.log(query);
 	dbConnect()
 		.then(db => {
 			const collection = db.collection(objType);
-			cl('Returning a single ' + objType);
-			if(!query || query==={}) res.end(404, { error: 'not found' })
+
 			return collection.findOne(query)
 				.then(obj => {
-					console.log(obj,'objjj')
+					cl('Returning a single ' + objType);
 					res.json(obj);
 					db.close();
 				})
@@ -302,13 +296,10 @@ function removeFromMatch(socketId) {
 		var playerMatch = matches.find(match => {
 			return match.pin === activePlayersMap[socketId]
 		})
-		if (playerMatch) {
-			var idx = playerMatch.players.findIndex(player => player.userId === socketId)
-			playerMatch.players.splice(idx, 1);
-			if (playerMatch.players.length === 0) removeMatch(playerMatch.pin)
-		}
+		var idx = playerMatch.players.findIndex(player => player.userId === socketId)
+		playerMatch.players.splice(idx, 1);
+		if (playerMatch.players.length === 0) removeMatch(playerMatch.pin)
 	}
-
 }
 
 function removeMatch(pin) {
@@ -372,45 +363,39 @@ function createMatch(playerName, gameId, Clientsocket) {
 }
 function saveMatch(match) {
 	dbConnect().then((db) => {
-		const collection = db.collection('match');
-		collection.insert(match, (err, result) => {
+		const match = db.collection('match');
+		const game = db.collection.game('game')
+		match.insert(match, (err, result) => {
 			if (err) {
 				cl(`Couldnt insert a new match`, err)
 			} else {
 				cl('match', match + ' added');
 			}
+			// // var id = new mongodb.ObjectID(match.gameId)
+			// // game.findOne({_id:id},err,foundGame=>{
+			// // 	if(err) {
+			// // 		cl(`Couldnt fetch a game`, err)
+			// // 	} else {
+			// // 		foundGame.playersCount+= match.players.length
+			// // 		var currhighScore = foundGame.highscore;
+			// // 		var matchScores = match.players.map(player=>{
+			// // 			return player.score
+			// // 		})
+			// // 		var max = Math.max(...matchScores)
+			// // 		if (max > currhighScore) foundGame.highscore = max;
+			// // 		delete foundGame._id;
+			// // 		game.updateOne({_id:id},foundGame,err,res=>{
+			// // 			if(err) {
+			// // 				console.log('couldnt update',foundGame)
+			// // 			} else {
+			// // 				console.log('updated !',res)
+			// // 			}
+			// // 		})
+			// // 	}
+			// })
+			db.close();
 		});
-		db.close();
-		updateGame(match)
 	});
-}
-function updateGame(match) {
-	dbConnect().then((db) => {
-		var id = new mongodb.ObjectID(match.gameId)
-		var game = db.collection('game');
-		game.findOne({ _id: id })
-			.then(foundGame => {
-				console.log(foundGame, 'foundgamee-----------')
-				foundGame.playersCount += match.players.length
-				var currhighScore = foundGame.highscore;
-				var matchScores = match.players.map(player => {
-					return player.score
-				})
-				var max = Math.max(...matchScores)
-				if (max > currhighScore) foundGame.highscore = max;
-				delete foundGame._id;
-
-				game.updateOne({ _id: id }, foundGame,
-					(err, result) => {
-						if (err) {
-							console.log(err, '*******************')
-						} else {
-							console.log('updated game', foundGame)
-						}
-						db.close();
-					});
-			})
-	})
 }
 io.on('connection', (socket) => {
 	console.log('a user connected');
